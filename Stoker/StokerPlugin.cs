@@ -33,7 +33,7 @@ namespace Stoker
         #endregion
 
         #region Provider Fields
-        private SaveManager currentSave;
+        public SaveManager currentSave;
         private GameStateManager Game;
         #endregion
 
@@ -88,7 +88,7 @@ namespace Stoker
         public void DeckChangedNotification(List<CardState> deck, int visibleDeckCount)
         {
             //Alphabetize deck
-            List<CardState> query = deck.OrderBy(card => card.GetAssetName()).ToList();
+            List<CardState> query = deck.OrderBy(card => card.GetTitle()).ToList();
 
             //If deck is bigger, increase pool size
             if (query.Count > SelectionButtonsPool.Count)
@@ -118,6 +118,7 @@ namespace Stoker
             {
                 Console.WriteLine(j);
                 sbi = SelectionButtonsPool[j];
+                sbi.gameObject.SetActive(true);
                 sbi.UpdateText(query[j]);
             }
         }

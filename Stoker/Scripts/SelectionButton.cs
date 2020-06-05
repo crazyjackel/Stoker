@@ -57,7 +57,7 @@ namespace Stoker.Scripts
                     modifiers += upgrades[index].GetAssetName() + ((index != upgrades.Count - 1) ? "|" : "");
                 }
             }
-            string text = $"{card.GetAssetName()}{modifiers}";
+            string text = $"{card.GetTitle()}{modifiers}";
             Console.WriteLine(text);
             textComponent = GetComponentInChildren<Text>();
             textComponent.text = text;
