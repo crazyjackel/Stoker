@@ -28,8 +28,10 @@ namespace Stoker
         //constant strings for finding unity objects
         private const string name_removeBackground = "Remove";
         private const string name_searchBarBackground = "Search";
+        private const string name_addBackground = "Add";
         private const string name_removeButton = "Button";
         private const string name_searchBar = "InputField";
+        private const string name_addButton = "Button";
         private const string name_mainBackground = "MainBackground";
         private const string name_secondaryBackground = "ScrollListBackGround";
         private const string name_secondaryBackground2 = "ScrollListBackGround_2";
@@ -50,6 +52,7 @@ namespace Stoker
         private GameObject Canvas;
         private GameObject SelectionButtonPrefab;
         private GameObject RemoveButton;
+        private GameObject AddButton;
         private GameObject ButtonContent;
         private GameObject ButtonContent_2;
         private GameObject SearchBar;
@@ -59,8 +62,8 @@ namespace Stoker
         public CardData selectedCardData;
         public SelectionButton<CardData> selectedCardDataGameobject;
 
-        private List<SelectionButton<CardState>> SelectionButtonsPool = new List<SelectionButton<CardState>>();
-        private List<SelectionButton<CardData>> AllGameDataSelectionButtonsPool = new List<SelectionButton<CardData>>();
+        private List<DerivedCardStateSelectionButton> SelectionButtonsPool = new List<DerivedCardStateSelectionButton>();
+        private List<DerivedCardDataSelectionButton> AllGameDataSelectionButtonsPool = new List<DerivedCardDataSelectionButton>();
 
         private string search;
         #endregion
@@ -68,12 +71,8 @@ namespace Stoker
         #region Unity Methods
         void Awake()
         {
-            //Subscribe as Client
-            DepInjector.AddClient(this);
-
             //Instantiate then Hide Canvas
             Canvas = GameObject.Instantiate(AssetBundleUtils.LoadAssetFromPath<GameObject>(bundleName, assetName_Canvas));
-            Console.WriteLine(Canvas.transform.parent);
             DontDestroyOnLoad(Canvas);
             Canvas.SetActive(false);
 
@@ -85,8 +84,14 @@ namespace Stoker
             ButtonContent_2 = Canvas.transform.Find($"{name_mainBackground}/{name_secondaryBackground2}/{name_viewport}/{name_content}").gameObject;
             RemoveButton = Canvas.transform.Find($"{name_mainBackground}/{name_removeBackground}/{name_removeButton}").gameObject;
             RemoveButton.GetComponent<Button>().onClick.AddListener(AttemptToRemoveSelectedCard);
+            AddButton = Canvas.transform.Find($"{name_mainBackground}/{name_addBackground}/{name_addButton}").gameObject;
+            AddButton.GetComponent<Button>().onClick.AddListener(AttemptToAddSelectedCardData);
             SearchBar = Canvas.transform.Find($"{name_mainBackground}/{name_searchBarBackground}/{name_searchBar}").gameObject;
             SearchBar.GetComponent<InputField>().onValueChanged.AddListener(UpdateCardDataBase);
+
+            //Subscribe as Client
+            DepInjector.AddClient(this);
+            this.Logger.LogInfo("Stoker Plugin Initialized");
         }
 
 
@@ -111,7 +116,7 @@ namespace Stoker
             {
                 for (int i = SelectionButtonsPool.Count; i < query.Count; i++)
                 {
-                    SelectionButton<CardState> selectionButton = CreateSelectionButton<CardState>(ButtonContent.transform);
+                    DerivedCardStateSelectionButton selectionButton = CreateCardStateSelectionButton(ButtonContent.transform);
                     selectionButton.OnClick += OnClickCardState;
                     selectionButton.UpdateTextFunc += GetCardStateName;
                     SelectionButtonsPool.Add(selectionButton);
@@ -146,6 +151,7 @@ namespace Stoker
                 //Subscribe to receive Deck Notifications
                 currentSave.AddDeckNotifications(this);
                 data = currentSave.GetAllGameData();
+                this.Logger.LogInfo("SaveManager Initialized");
                 InitializeCardDataBase();
             }
 
@@ -172,12 +178,22 @@ namespace Stoker
         #endregion
 
         #region StokerPlugin Methods
-        public SelectionButton<T> CreateSelectionButton<T>(Transform parent)
+        public DerivedCardDataSelectionButton CreateCardDataSelectionButton(Transform parent)
         {
             GameObject sbp = GameObject.Instantiate(SelectionButtonPrefab);
             DontDestroyOnLoad(sbp);
             sbp.transform.SetParent(parent);
-            SelectionButton<T> sb = sbp.AddComponent<SelectionButton<T>>();
+            DerivedCardDataSelectionButton sb = sbp.AddComponent<DerivedCardDataSelectionButton>();
+            sb.plugin = this;
+            return sb;
+        }
+
+        public DerivedCardStateSelectionButton CreateCardStateSelectionButton(Transform parent)
+        {
+            GameObject sbp = GameObject.Instantiate(SelectionButtonPrefab);
+            DontDestroyOnLoad(sbp);
+            sbp.transform.SetParent(parent);
+            DerivedCardStateSelectionButton sb = sbp.AddComponent<DerivedCardStateSelectionButton>();
             sb.plugin = this;
             return sb;
         }
@@ -189,7 +205,8 @@ namespace Stoker
                 List<CardData> dataList = data.GetAllCardData().OrderBy(x => x.GetName()).ToList();
                 for (int i = 0; i < dataList.Count; i++)
                 {
-                    SelectionButton<CardData> selectionButton = new SelectionButton<CardData>();
+
+                    DerivedCardDataSelectionButton selectionButton = CreateCardDataSelectionButton(ButtonContent_2.transform);
                     selectionButton.OnClick += OnClickCardData;
                     selectionButton.UpdateTextFunc += GetCardDataName;
                     selectionButton.UpdateText(dataList[i]);
@@ -204,11 +221,11 @@ namespace Stoker
             if (currentSave != null && data != null)
             {
                 List<CardData> dataList = data.GetAllCardData().OrderBy(x => x.GetName()).ToList();
-                if(dataList.Count > AllGameDataSelectionButtonsPool.Count)
+                if (dataList.Count > AllGameDataSelectionButtonsPool.Count)
                 {
-                    for(int i = AllGameDataSelectionButtonsPool.Count; i < dataList.Count; i++)
+                    for (int i = AllGameDataSelectionButtonsPool.Count; i < dataList.Count; i++)
                     {
-                        SelectionButton<CardData> selectionButton = new SelectionButton<CardData>();
+                        DerivedCardDataSelectionButton selectionButton = CreateCardDataSelectionButton(ButtonContent_2.transform);
                         selectionButton.OnClick += OnClickCardData;
                         selectionButton.UpdateTextFunc += GetCardDataName;
                         selectionButton.UpdateText(dataList[i]);
@@ -216,33 +233,35 @@ namespace Stoker
                     }
                 }
 
-                string searchCopy = string.Copy(search);
-                foreach(MTClan clan in (MTClan[])Enum.GetValues(typeof(MTClan)))
+                
+                string searchCopy = string.Copy(search).ToLower();
+                foreach (MTClan clan in (MTClan[])Enum.GetValues(typeof(MTClan)))
                 {
-                    if (searchCopy.Contains($"[{clan}]"))
+                    if (searchCopy.Contains($"[{clan.ToString().ToLower()}]"))
                     {
+                        Logger.LogInfo($"Search contains tag: [{clan}]");
                         dataList = dataList.Where((x) => (x.GetLinkedClassID() == ClanIDs.GetClanID(clan))).ToList();
-                        searchCopy.Replace($"[{clan}]","");
+                        searchCopy.Replace($"[{clan.ToString().ToLower()}]", "");
                     }
                 }
 
-                dataList = dataList.Where((x) => x.GetName().Contains(searchCopy)).ToList();
+                dataList = dataList.Where((x) => x.GetName().ToLower().Contains(searchCopy)).ToList();
 
-                for(int i = 0; i < dataList.Count; i++)
+                for (int i = 0; i < dataList.Count; i++)
                 {
                     AllGameDataSelectionButtonsPool[i].gameObject.SetActive(true);
                     AllGameDataSelectionButtonsPool[i].UpdateText(dataList[i]);
                 }
 
-                for(int j = dataList.Count; j < AllGameDataSelectionButtonsPool.Count; j++)
+                for (int j = dataList.Count; j < AllGameDataSelectionButtonsPool.Count; j++)
                 {
                     AllGameDataSelectionButtonsPool[j].gameObject.SetActive(false);
                 }
             }
         }
 
-            //Listener to GameStarting
-            public void GameStartedListener(RunType type)
+        //Listener to GameStarting
+        public void GameStartedListener(RunType type)
         {
             if (currentSave != null)
             {
@@ -261,7 +280,7 @@ namespace Stoker
 
         public void AttemptToAddSelectedCardData()
         {
-            if(currentSave != null && selectedCardData != null)
+            if (currentSave != null && selectedCardData != null)
             {
                 currentSave.AddCardToDeck(selectedCardData);
             }
@@ -279,9 +298,10 @@ namespace Stoker
             obj.button.colors = new ColorBlock
             {
                 colorMultiplier = obj.button.colors.colorMultiplier,
-                highlightedColor = obj.button.colors.highlightedColor,
-                normalColor = obj.button.colors.pressedColor,
-                pressedColor = obj.button.colors.pressedColor
+                normalColor = Color.red,
+                disabledColor = Color.red,
+                highlightedColor = Color.red,
+                pressedColor = Color.red
             };
         }
         public void OnClickCardData(StokerPlugin plugin, SelectionButton<CardData> obj, CardData item)
@@ -294,9 +314,10 @@ namespace Stoker
             obj.button.colors = new ColorBlock
             {
                 colorMultiplier = obj.button.colors.colorMultiplier,
-                highlightedColor = obj.button.colors.highlightedColor,
-                normalColor = obj.button.colors.pressedColor,
-                pressedColor = obj.button.colors.pressedColor
+                normalColor = Color.red,
+                disabledColor = Color.red,
+                highlightedColor = Color.red,
+                pressedColor = Color.red
             };
         }
         public string GetCardStateName(CardState card)
@@ -317,7 +338,7 @@ namespace Stoker
             }
             string text2 = $"{card.GetTitle()}{modifiers}";
             return text2;
-        }       
+        }
         public string GetCardDataName(CardData card)
         {
             return card.GetName();
