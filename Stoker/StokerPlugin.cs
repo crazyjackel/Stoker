@@ -14,7 +14,7 @@ using Stoker.Scripts;
 
 namespace Stoker
 {
-    [BepInPlugin("io.github.crazyjackel.Stoker", "Stoker Editor Application", "0.0.2")]
+    [BepInPlugin("io.github.crazyjackel.Stoker", "Stoker Deck Editor Application", "1.0.0")]
     [BepInProcess("MonsterTrain.exe")]
     [BepInProcess("MtLinkHandler.exe")]
     public class StokerPlugin : BaseUnityPlugin, IClient, IDeckNotifications
@@ -293,8 +293,17 @@ namespace Stoker
             plugin.selectedCardState = item;
             if (plugin.selectedCardStateGameobject != null)
             {
-                plugin.selectedCardStateGameobject.button.colors = obj.button.colors;
+                Color color = new Color(74, 78, 84);
+                plugin.selectedCardStateGameobject.button.colors = new ColorBlock
+                {
+                    colorMultiplier = obj.button.colors.colorMultiplier,
+                    normalColor = color,
+                    disabledColor = color,
+                    highlightedColor = color,
+                    pressedColor = color
+                };
             }
+            plugin.selectedCardStateGameobject = obj;
             obj.button.colors = new ColorBlock
             {
                 colorMultiplier = obj.button.colors.colorMultiplier,
@@ -307,10 +316,19 @@ namespace Stoker
         public void OnClickCardData(StokerPlugin plugin, SelectionButton<CardData> obj, CardData item)
         {
             plugin.selectedCardData = item;
-            if (plugin.selectedCardStateGameobject != null)
+            if (plugin.selectedCardDataGameobject != null)
             {
-                plugin.selectedCardStateGameobject.button.colors = obj.button.colors;
+                Color color = new Color(74,78,84);
+                plugin.selectedCardDataGameobject.button.colors = new ColorBlock
+                {
+                    colorMultiplier = obj.button.colors.colorMultiplier,
+                    normalColor = color,
+                    disabledColor = color,
+                    highlightedColor = color,
+                    pressedColor = color
+                };
             }
+            plugin.selectedCardDataGameobject = obj;
             obj.button.colors = new ColorBlock
             {
                 colorMultiplier = obj.button.colors.colorMultiplier,
