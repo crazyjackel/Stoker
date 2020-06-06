@@ -293,7 +293,7 @@ namespace Stoker
             plugin.selectedCardState = item;
             if (plugin.selectedCardStateGameobject != null)
             {
-                Color color = new Color(74, 78, 84);
+                Color color = new Color(74f/255, 78f/255, 84f/255);
                 plugin.selectedCardStateGameobject.button.colors = new ColorBlock
                 {
                     colorMultiplier = obj.button.colors.colorMultiplier,
@@ -318,7 +318,7 @@ namespace Stoker
             plugin.selectedCardData = item;
             if (plugin.selectedCardDataGameobject != null)
             {
-                Color color = new Color(74,78,84);
+                Color color = new Color(74f/255,78f/255,84f/255);
                 plugin.selectedCardDataGameobject.button.colors = new ColorBlock
                 {
                     colorMultiplier = obj.button.colors.colorMultiplier,
