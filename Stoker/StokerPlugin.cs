@@ -4,20 +4,20 @@ using System.Linq;
 using System.Reflection;
 using BepInEx;
 using HarmonyLib;
-using MonoMod.RuntimeDetour;
 using UnityEngine;
 using UnityEngine.UI;
 using MonsterTrainModdingAPI.Utilities;
-using MonsterTrainModdingAPI.Enum;
 using System.IO;
 using Stoker.Scripts;
+using MonsterTrainModdingAPI.Managers;
+using MonsterTrainModdingAPI.Interfaces;
 
 namespace Stoker
 {
     [BepInPlugin("io.github.crazyjackel.Stoker", "Stoker Deck Editor Application", "1.0.0")]
     [BepInProcess("MonsterTrain.exe")]
     [BepInProcess("MtLinkHandler.exe")]
-    public class StokerPlugin : BaseUnityPlugin, IClient, IDeckNotifications
+    public class StokerPlugin : BaseUnityPlugin, IClient, IDeckNotifications, IInitializable
     {
         #region Constant Groups
         //constant strings for assessing Bundle
@@ -46,9 +46,6 @@ namespace Stoker
         #endregion
 
         #region Local Fields
-        //Unused in this Version
-        private List<Hook> myHooks;
-
         private GameObject Canvas;
         private GameObject SelectionButtonPrefab;
         private GameObject RemoveButton;
@@ -69,15 +66,16 @@ namespace Stoker
         #endregion
 
         #region Unity Methods
-        void Awake()
+        public void Initialize()
         {
             //Instantiate then Hide Canvas
-            Canvas = GameObject.Instantiate(AssetBundleUtils.LoadAssetFromPath<GameObject>(bundleName, assetName_Canvas));
+            var GameObj = CustomAssetManager.LoadAssetFromBundle<GameObject>(new CustomAssetManager.AssetBundleLoadingInfo(assetName_Canvas,bundleName));
+            Canvas = GameObject.Instantiate(GameObj);
             DontDestroyOnLoad(Canvas);
             Canvas.SetActive(false);
 
             //Load Prefab to Instantiate Later
-            SelectionButtonPrefab = AssetBundleUtils.LoadAssetFromPath<GameObject>(bundleName, assetName_SelectionButton);
+            SelectionButtonPrefab = CustomAssetManager.LoadAssetFromBundle<GameObject>(new CustomAssetManager.AssetBundleLoadingInfo(assetName_SelectionButton, bundleName));
 
             //Find local Buttons and add Listeners
             ButtonContent = Canvas.transform.Find($"{name_mainBackground}/{name_secondaryBackground}/{name_viewport}/{name_content}").gameObject;
@@ -97,7 +95,7 @@ namespace Stoker
 
         void Update()
         {
-            if (Input.GetKeyDown(KeyCode.P))
+            if (Input.GetKeyDown(KeyCode.Equals))
             {
                 Canvas.SetActive(!Canvas.activeSelf);
             }
@@ -107,7 +105,6 @@ namespace Stoker
         #region DeckNotifications Methods
         public void DeckChangedNotification(List<CardState> deck, int visibleDeckCount)
         {
-
             //Alphabetize deck
             List<CardState> query = deck.OrderBy(card => card.GetTitle()).ToList();
 
@@ -178,6 +175,11 @@ namespace Stoker
         #endregion
 
         #region StokerPlugin Methods
+        /// <summary>
+        /// Creates a Selection Button for CardData
+        /// </summary>
+        /// <param name="parent"></param>
+        /// <returns></returns>
         public DerivedCardDataSelectionButton CreateCardDataSelectionButton(Transform parent)
         {
             GameObject sbp = GameObject.Instantiate(SelectionButtonPrefab);
@@ -187,7 +189,11 @@ namespace Stoker
             sb.plugin = this;
             return sb;
         }
-
+        /// <summary>
+        /// Creates a Selection Button for CardState
+        /// </summary>
+        /// <param name="parent"></param>
+        /// <returns></returns>
         public DerivedCardStateSelectionButton CreateCardStateSelectionButton(Transform parent)
         {
             GameObject sbp = GameObject.Instantiate(SelectionButtonPrefab);
@@ -233,14 +239,14 @@ namespace Stoker
                     }
                 }
 
-                
+
                 string searchCopy = string.Copy(search).ToLower();
-                foreach (MTClan clan in (MTClan[])Enum.GetValues(typeof(MTClan)))
+                foreach (ClassData clan in data.GetAllClassDatas())
                 {
-                    if (searchCopy.Contains($"[{clan.ToString().ToLower()}]"))
+                    if (searchCopy.Contains($"[{clan.GetTitle().ToLower()}]"))
                     {
                         Logger.LogInfo($"Search contains tag: [{clan}]");
-                        dataList = dataList.Where((x) => (x.GetLinkedClassID() == ClanIDs.GetClanID(clan))).ToList();
+                        dataList = dataList.Where((x) => (x.GetLinkedClass() == clan)).ToList();
                         searchCopy.Replace($"[{clan.ToString().ToLower()}]", "");
                     }
                 }
@@ -290,7 +296,9 @@ namespace Stoker
         #region StokerPlugin Delegation Methods
         public void OnClickCardState(StokerPlugin plugin, SelectionButton<CardState> obj, CardState item)
         {
+            //Sets the Selected Card State to this
             plugin.selectedCardState = item;
+            //Update old Card State's GameObj's color
             if (plugin.selectedCardStateGameobject != null)
             {
                 Color color = new Color(74f/255, 78f/255, 84f/255);
@@ -303,7 +311,9 @@ namespace Stoker
                     pressedColor = color
                 };
             }
+            //Set Selected Card State to this
             plugin.selectedCardStateGameobject = obj;
+            //Update Colors
             obj.button.colors = new ColorBlock
             {
                 colorMultiplier = obj.button.colors.colorMultiplier,
