@@ -14,7 +14,7 @@ using MonsterTrainModdingAPI.Interfaces;
 
 namespace Stoker
 {
-    [BepInPlugin("io.github.crazyjackel.Stoker", "Stoker Deck Editor Application", "1.0.0")]
+    [BepInPlugin("io.github.crazyjackel.Stoker", "Stoker Deck Editor Application", "1.1.0")]
     [BepInProcess("MonsterTrain.exe")]
     [BepInProcess("MtLinkHandler.exe")]
     public class StokerPlugin : BaseUnityPlugin, IClient, IDeckNotifications, IInitializable
@@ -63,19 +63,30 @@ namespace Stoker
         private List<DerivedCardDataSelectionButton> AllGameDataSelectionButtonsPool = new List<DerivedCardDataSelectionButton>();
 
         private string search;
+        private BundleAssetLoadingInfo info;
         #endregion
 
         #region Unity Methods
         public void Initialize()
         {
+            var assembly = Assembly.GetExecutingAssembly();
+            PluginManager.AssemblyNameToPath.TryGetValue(assembly.FullName, out string basePath);
+            info = new BundleAssetLoadingInfo
+            {
+                PluginPath = basePath,
+                FilePath = bundleName,
+            };
+            BundleManager.RegisterBundle(GUIDGenerator.GenerateDeterministicGUID(info.FullPath), info);
+
+
             //Instantiate then Hide Canvas
-            var GameObj = CustomAssetManager.LoadAssetFromBundle<GameObject>(new CustomAssetManager.AssetBundleLoadingInfo(assetName_Canvas,bundleName));
+            var GameObj = BundleManager.LoadAssetFromBundle(info, assetName_Canvas) as GameObject;
             Canvas = GameObject.Instantiate(GameObj);
             DontDestroyOnLoad(Canvas);
             Canvas.SetActive(false);
 
             //Load Prefab to Instantiate Later
-            SelectionButtonPrefab = CustomAssetManager.LoadAssetFromBundle<GameObject>(new CustomAssetManager.AssetBundleLoadingInfo(assetName_SelectionButton, bundleName));
+            SelectionButtonPrefab = BundleManager.LoadAssetFromBundle(info, assetName_SelectionButton) as GameObject;
 
             //Find local Buttons and add Listeners
             ButtonContent = Canvas.transform.Find($"{name_mainBackground}/{name_secondaryBackground}/{name_viewport}/{name_content}").gameObject;
@@ -105,8 +116,8 @@ namespace Stoker
         #region DeckNotifications Methods
         public void DeckChangedNotification(List<CardState> deck, int visibleDeckCount)
         {
-            //Alphabetize deck
-            List<CardState> query = deck.OrderBy(card => card.GetTitle()).ToList();
+            //Alphabetize deck, remove champion cards as they crash the game
+            List<CardState> query = deck.OrderBy(card => card.GetTitle()).Where(x => !x.IsChampionCard()).ToList();
 
             //If deck is bigger, increase pool size
             if (query.Count > SelectionButtonsPool.Count)

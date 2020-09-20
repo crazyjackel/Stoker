@@ -8,12 +8,12 @@
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
-    <OutDir>C:\Users\Jack\Desktop\MtBuilds\Stoker\plugin</OutDir>
+    <OutDir>C:\Users\Jack\Desktop\MtBuilds\Stoker\plugins</OutDir>
     <DocumentationFile></DocumentationFile>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
-    <OutDir>C:\Users\Jack\Desktop\MtBuilds\Stoker\plugin\</OutDir>
+    <OutDir>C:\Users\Jack\Desktop\MtBuilds\Stoker\plugins\</OutDir>
   </PropertyGroup>
 
   <ItemGroup>
