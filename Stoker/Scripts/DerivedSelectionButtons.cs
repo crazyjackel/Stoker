@@ -20,4 +20,10 @@ namespace Stoker.Scripts
     public class DerivedRelicDataSelectionButton : SelectionButton<RelicData>
     {
     }
+    public class DerivedUpgradeDataSelectionButton : SelectionButton<CardUpgradeData>
+    {
+    }
+    public class DerivedUpgradeStateSelectionButton : SelectionButton<CardUpgradeState>
+    {
+    }
 }
