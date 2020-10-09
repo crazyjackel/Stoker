@@ -901,7 +901,12 @@ namespace Stoker
             {
                 val = arg.GetUpgradeDescriptionKey().Localize(null);
             }
-            return RemoveTags(val);
+            if(val.Length == 0)
+            {
+                val = arg.name;
+            }
+            val = RemoveTags(val);
+            return val;
         }
         /// <summary>
         /// Removes the Tags from strings, replaces them with their name= property
