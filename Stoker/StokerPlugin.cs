@@ -1,18 +1,21 @@
 ﻿using Assets.IUnified;
 using BepInEx;
 using HarmonyLib;
-using MonsterTrainModdingAPI.Interfaces;
-using MonsterTrainModdingAPI.Managers;
-using MonsterTrainModdingAPI.Utilities;
+using Trainworks.Interfaces;
+using Trainworks.Managers;
+using Trainworks.Utilities;
 using Stoker.Scripts;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.IO;
 using System.Text.RegularExpressions;
 using UnityEngine;
 using UnityEngine.Assertions.Must;
 using UnityEngine.UI;
+using BepInEx.Logging;
+using Trainworks;
 
 namespace Stoker
 {
@@ -33,9 +36,10 @@ namespace Stoker
     /// Auto-Reselect for Quicker Removal
     /// Fix that problem with selection looking weird
     /// </summary>
-    [BepInPlugin("io.github.crazyjackel.Stoker", "Stoker Deck Editor Application", "1.2.0")]
+    [BepInPlugin("io.github.crazyjackel.Stoker", "Stoker Deck Editor Application", "1.3.0")]
     [BepInProcess("MonsterTrain.exe")]
     [BepInProcess("MtLinkHandler.exe")]
+    [BepInDependency("tools.modding.trainworks")]
     public class StokerPlugin : BaseUnityPlugin, IClient, IDeckNotifications, IInitializable, IRelicNotifications
     {
         #region Constant Groups
@@ -43,10 +47,12 @@ namespace Stoker
         private const string bundleName = "stokerassetbundle";
         private const string assetName_Canvas = "DeckEditor";
         private const string assetName_SelectionButton = "CardSelection";
+        private const string saveFolderName = "Saves";
 
         //constant strings for finding unity objects
         private const string name_removeBackground = "Remove";
         private const string name_searchBarBackground = "Search";
+        private const string name_presetNameBackground = "FileName";
         private const string name_addBackground = "Add";
         private const string name_Button = "Button";
         private const string name_searchBar = "InputField";
@@ -55,6 +61,8 @@ namespace Stoker
         private const string name_removeRelicBackground = "RemoveRelic";
         private const string name_addUpgradeBackground = "AddUpgrade";
         private const string name_removeUpgradeBackground = "RemoveUpgrade";
+        private const string name_importBackground = "Import";
+        private const string name_exportBackground = "Export";
         private const string name_mainBackground = "MainBackground";
         private const string name_secondaryBackground = "ScrollListBackGround";
         private const string name_secondaryBackground2 = "ScrollListBackGround_2";
@@ -71,6 +79,7 @@ namespace Stoker
         public RelicManager relicManager;
         private GameStateManager Game;
         private AllGameData data;
+        public static StokerPlugin plugin;
         #endregion
 
         #region Local Fields
@@ -83,13 +92,17 @@ namespace Stoker
         private GameObject RemoveRelicButton;
         private GameObject AddUpgradeButton;
         private GameObject RemoveUpgradeButton;
+        private GameObject ImportButton;
+        private GameObject ExportButton;
         private GameObject DeckContent;
         private GameObject CardDatabaseContent;
         private GameObject RelicDatabaseContent;
         private GameObject UpgradeDatabaseContent;
         private GameObject RelicContent;
         private GameObject UpgradeContent;
+
         private GameObject SearchBar;
+        private GameObject FileNameBar;
 
         public CardState selectedCardState;
         public SelectionButton<CardState> selectedCardStateGameobject;
@@ -112,79 +125,97 @@ namespace Stoker
         private List<DerivedUpgradeStateSelectionButton> UpgradeStateSelectionButtonsPool = new List<DerivedUpgradeStateSelectionButton>();
 
         private string search = "";
+        private string filename = "";
         private BundleAssetLoadingInfo info;
         private List<CardUpgradeData> applyableUpgrades = new List<CardUpgradeData>();
         private Color grey = new Color(74f / 255, 78f / 255, 84f / 255);
         private bool IsInit = false;
+        private StokerSaveState saveState = new StokerSaveState();
+        private string basePath;
+
+        public static readonly ManualLogSource Log = BepInEx.Logging.Logger.CreateLogSource("Stoker");
         #endregion
 
         #region Unity Methods
         public void Initialize()
         {
-            Logger.Log(BepInEx.Logging.LogLevel.All, "Initializing AssetBundle");
+            Trainworks.Trainworks.Log("Initializing");
+            Harmony harmony = new Harmony("io.github.crazyjackel.Stoker");
+            harmony.PatchAll();
+            Logger.Log(BepInEx.Logging.LogLevel.Info, "Initializing AssetBundle");
             //Load Assets
             var assembly = Assembly.GetExecutingAssembly();
-            PluginManager.AssemblyNameToPath.TryGetValue(assembly.FullName, out string basePath);
+            PluginManager.PluginGUIDToPath.TryGetValue("io.github.crazyjackel.Stoker", out basePath);
             info = new BundleAssetLoadingInfo
             {
                 PluginPath = basePath,
                 FilePath = bundleName,
             };
             BundleManager.RegisterBundle(GUIDGenerator.GenerateDeterministicGUID(info.FullPath), info);
-            Logger.Log(BepInEx.Logging.LogLevel.All, "Loaded AssetBundle");
+            Logger.Log(BepInEx.Logging.LogLevel.Info, "Loaded AssetBundle");
 
             //Instantiate then Hide Canvas
             var GameObj = BundleManager.LoadAssetFromBundle(info, assetName_Canvas) as GameObject;
-            Logger.Log(BepInEx.Logging.LogLevel.All, "Loaded Main Asset: " + GameObj.name);
+            Logger.Log(BepInEx.Logging.LogLevel.Info, "Loaded Main Asset: " + GameObj.name);
             Canvas = GameObject.Instantiate(GameObj);
             DontDestroyOnLoad(Canvas);
             Canvas.SetActive(false);
 
             //Load Prefab to Instantiate Later
             SelectionButtonPrefab = BundleManager.LoadAssetFromBundle(info, assetName_SelectionButton) as GameObject;
-            Logger.Log(BepInEx.Logging.LogLevel.All, "Loaded Button Prefab");
+            Logger.Log(BepInEx.Logging.LogLevel.Info, "Loaded Button Prefab");
 
             //Find local Buttons and add Listeners
             //Load Content where to add Selection Buttons
             DeckContent = Canvas.transform.Find($"{name_mainBackground}/{name_secondaryBackground}/{name_viewport}/{name_content}").gameObject;
-            Logger.Log(BepInEx.Logging.LogLevel.All, "Found Deck Content");
+            Logger.Log(BepInEx.Logging.LogLevel.Info, "Found Deck Content");
             CardDatabaseContent = Canvas.transform.Find($"{name_mainBackground}/{name_secondaryBackground2}/{name_viewport}/{name_content}").gameObject;
-            Logger.Log(BepInEx.Logging.LogLevel.All, "Found Card Database Content");
+            Logger.Log(BepInEx.Logging.LogLevel.Info, "Found Card Database Content");
             RelicDatabaseContent = Canvas.transform.Find($"{name_mainBackground}/{name_secondaryBackground3}/{name_viewport}/{name_content}").gameObject;
-            Logger.Log(BepInEx.Logging.LogLevel.All, "Found Relic Database Content");
+            Logger.Log(BepInEx.Logging.LogLevel.Info, "Found Relic Database Content");
             RelicContent = Canvas.transform.Find($"{name_mainBackground}/{name_secondaryBackground4}/{name_viewport}/{name_content}").gameObject;
-            Logger.Log(BepInEx.Logging.LogLevel.All, "Found Relic Content");
+            Logger.Log(BepInEx.Logging.LogLevel.Info, "Found Relic Content");
             UpgradeContent = Canvas.transform.Find($"{name_mainBackground}/{name_secondaryBackground5}/{name_viewport}/{name_content}").gameObject;
-            Logger.Log(BepInEx.Logging.LogLevel.All, "Found Upgrade Content");
+            Logger.Log(BepInEx.Logging.LogLevel.Info, "Found Upgrade Content");
             UpgradeDatabaseContent = Canvas.transform.Find($"{name_mainBackground}/{name_secondaryBackground6}/{name_viewport}/{name_content}").gameObject;
-            Logger.Log(BepInEx.Logging.LogLevel.All, "Found Upgrade Database Content");
+            Logger.Log(BepInEx.Logging.LogLevel.Info, "Found Upgrade Database Content");
 
             //Get Buttons and Input Fields
             RemoveButton = Canvas.transform.Find($"{name_mainBackground}/{name_removeBackground}/{name_Button}").gameObject;
-            Logger.Log(BepInEx.Logging.LogLevel.All, "Found Remove Button");
+            Logger.Log(BepInEx.Logging.LogLevel.Info, "Found Remove Button");
             RemoveButton.GetComponent<Button>().onClick.AddListener(AttemptToRemoveSelectedCard);
             AddButton = Canvas.transform.Find($"{name_mainBackground}/{name_addBackground}/{name_Button}").gameObject;
-            Logger.Log(BepInEx.Logging.LogLevel.All, "Found Add Button");
+            Logger.Log(BepInEx.Logging.LogLevel.Info, "Found Add Button");
             AddButton.GetComponent<Button>().onClick.AddListener(AttemptToAddSelectedCardData);
             DuplicateButton = Canvas.transform.Find($"{name_mainBackground}/{name_duplicateBackground}/{name_Button}").gameObject;
-            Logger.Log(BepInEx.Logging.LogLevel.All, "Found Duplication Button");
+            Logger.Log(BepInEx.Logging.LogLevel.Info, "Found Duplication Button");
             DuplicateButton.GetComponent<Button>().onClick.AddListener(AttemptToDuplicateSelectedCard);
             AddRelicButton = Canvas.transform.Find($"{name_mainBackground}/{name_addRelicBackground}/{name_Button}").gameObject;
-            Logger.Log(BepInEx.Logging.LogLevel.All, "Found Add Relic Button");
+            Logger.Log(BepInEx.Logging.LogLevel.Info, "Found Add Relic Button");
             AddRelicButton.GetComponent<Button>().onClick.AddListener(AttemptToAddSelectedRelicData);
             RemoveRelicButton = Canvas.transform.Find($"{name_mainBackground}/{name_removeRelicBackground}/{name_Button}").gameObject;
-            Logger.Log(BepInEx.Logging.LogLevel.All, "Found Remove Relic Button");
+            Logger.Log(BepInEx.Logging.LogLevel.Info, "Found Remove Relic Button");
             RemoveRelicButton.GetComponent<Button>().onClick.AddListener(AttemptToRemoveSelectedRelic);
             AddUpgradeButton = Canvas.transform.Find($"{name_mainBackground}/{name_addUpgradeBackground}/{name_Button}").gameObject;
-            Logger.Log(BepInEx.Logging.LogLevel.All, "Found Add Upgrade Button");
+            Logger.Log(BepInEx.Logging.LogLevel.Info, "Found Add Upgrade Button");
             AddUpgradeButton.GetComponent<Button>().onClick.AddListener(AttemptToUpgradeCardState);
             RemoveUpgradeButton = Canvas.transform.Find($"{name_mainBackground}/{name_removeUpgradeBackground}/{name_Button}").gameObject;
-            Logger.Log(BepInEx.Logging.LogLevel.All, "Found Remove Upgrade Button");
+            Logger.Log(BepInEx.Logging.LogLevel.Info, "Found Remove Upgrade Button");
             RemoveUpgradeButton.GetComponent<Button>().onClick.AddListener(AttemptToRemoveUpgradeState);
+            ImportButton = Canvas.transform.Find($"{name_mainBackground}/{name_importBackground}/{name_Button}").gameObject;
+            Logger.Log(BepInEx.Logging.LogLevel.Info, "Found Import Button");
+            ImportButton.GetComponent<Button>().onClick.AddListener(LoadFromTxtFile);
+            ExportButton = Canvas.transform.Find($"{name_mainBackground}/{name_exportBackground}/{name_Button}").gameObject;
+            Logger.Log(BepInEx.Logging.LogLevel.Info, "Found Export Button");
+            ExportButton.GetComponent<Button>().onClick.AddListener(ExportStateToTxtFile);
             SearchBar = Canvas.transform.Find($"{name_mainBackground}/{name_searchBarBackground}/{name_searchBar}").gameObject;
-            Logger.Log(BepInEx.Logging.LogLevel.All, "Found Search Bar");
+            Logger.Log(BepInEx.Logging.LogLevel.Info, "Found Search Bar");
             SearchBar.GetComponent<InputField>().onValueChanged.AddListener(UpdateDatabases);
-            Logger.Log(BepInEx.Logging.LogLevel.All, "Found Elements");
+            FileNameBar = Canvas.transform.Find($"{name_mainBackground}/{name_presetNameBackground}/{name_searchBar}").gameObject;
+            Logger.Log(BepInEx.Logging.LogLevel.Info, "Found File Name Bar");
+            FileNameBar.GetComponent<InputField>().onValueChanged.AddListener(UpdateFileName);
+
+            Logger.Log(BepInEx.Logging.LogLevel.Info, "Found Elements");
             //Subscribe as Client
             DepInjector.AddClient(this);
             this.Logger.LogInfo("Stoker Plugin Initialized");
@@ -193,7 +224,7 @@ namespace Stoker
 
         void Update()
         {
-            if (Input.GetKeyDown(KeyCode.Equals))
+            if (Input.GetKeyDown(KeyCode.Equals) && Canvas != null)
             {
                 Canvas.SetActive(!Canvas.activeSelf);
             }
@@ -439,7 +470,7 @@ namespace Stoker
             if (currentSave != null && selectedRelicState != null && selectedRelicStateGameobject.gameObject.activeSelf)
             {
                 SaveData savedata = (SaveData)AccessTools.PropertyGetter(typeof(SaveManager), "ActiveSaveData").Invoke(currentSave, new object[] { });
-                Logger.Log(BepInEx.Logging.LogLevel.All, "Removing Blessing " + selectedRelicState.GetName());
+                Logger.Log(BepInEx.Logging.LogLevel.Info, "Removing Blessing " + selectedRelicState.GetName());
                 savedata.GetBlessings().Remove(selectedRelicState);
                 RelicManager.RelicAdded.Dispatch(currentSave.GetCollectedRelics(), null, Team.Type.Monsters);
             }
@@ -841,7 +872,7 @@ namespace Stoker
                 }
                 for (int j = 0; j < arg.GetStatusEffectUpgrades().Count; j++)
                 {
-                    val += StatusEffectManager.GetLocalizedName(arg.GetStatusEffectUpgrades()[j].statusId, arg.GetStatusEffectUpgrades()[j].count) 
+                    val += StatusEffectManager.GetLocalizedName(arg.GetStatusEffectUpgrades()[j].statusId, arg.GetStatusEffectUpgrades()[j].count)
                         + ((j != arg.GetStatusEffectUpgrades().Count - 1) ? ", " : "");
                 }
                 if (val.Length != 0 && arg.GetTriggerUpgrades().Count > 0)
@@ -850,9 +881,9 @@ namespace Stoker
                 }
                 for (int k = 0; k < arg.GetTriggerUpgrades().Count; k++)
                 {
-                    val += CharacterTriggerData.GetKeywordText(arg.GetTriggerUpgrades()[k].GetTrigger()) 
-                        + ": " 
-                        + arg.GetTriggerUpgrades()[k].GetDescriptionKey().Localize(null) 
+                    val += CharacterTriggerData.GetKeywordText(arg.GetTriggerUpgrades()[k].GetTrigger())
+                        + ": "
+                        + arg.GetTriggerUpgrades()[k].GetDescriptionKey().Localize(null)
                         + ((k != arg.GetTriggerUpgrades().Count - 1) ? ", " : "");
                 }
                 if (val.Length != 0 && arg.GetCardTriggerUpgrades().Count > 0)
@@ -862,7 +893,7 @@ namespace Stoker
                 for (int l = 0; l < arg.GetCardTriggerUpgrades().Count; l++)
                 {
                     CardTriggerTypeMethods.GetLocalizedName(arg.GetCardTriggerUpgrades()[l].GetTrigger(), out string text);
-                    val += text 
+                    val += text
                         + ": "
                         + arg.GetCardTriggerUpgrades()[l].GetDescriptionKey().Localize(null);
                 }
@@ -901,7 +932,7 @@ namespace Stoker
             {
                 val = arg.GetUpgradeDescriptionKey().Localize(null);
             }
-            if(val.Length == 0)
+            if (val.Length == 0)
             {
                 val = arg.name;
             }
@@ -961,7 +992,39 @@ namespace Stoker
                 pressedColor = Color.red
             };
         }
-    
+        public void UpdateFileName(string search)
+        {
+            filename = search;
+        }
+        public void ExportStateToTxtFile()
+        {
+            
+            if (filename.IndexOfAny(Path.GetInvalidFileNameChars()) < 0 && filename != "")
+            {
+                Logger.Log(BepInEx.Logging.LogLevel.Info, $"Exporting {filename}.json");
+                SaveStateHelper.BuildSaveState(saveState, currentSave);
 
+                string DirectoryPath = Path.Combine(basePath, saveFolderName);
+                if (!Directory.Exists(DirectoryPath))
+                {
+                    Directory.CreateDirectory(DirectoryPath);
+                }
+                string FilePath = Path.Combine(DirectoryPath, $"{filename}.json");
+                
+                File.WriteAllText(FilePath, SaveStateHelper.SaveToString(saveState));
+                Logger.Log(BepInEx.Logging.LogLevel.Info, "Exported");
+            }
+        }
+        public void LoadFromTxtFile()
+        {
+            if (filename.IndexOfAny(Path.GetInvalidFileNameChars()) < 0)
+            {
+                var path = Path.Combine(basePath, saveFolderName, $"{filename}.json");
+                Logger.Log(LogLevel.Info, $"Loading... {path}");
+                string ReadText = File.ReadAllText(path);
+                saveState = SaveStateHelper.BuildFromJson(ReadText);
+                SaveStateHelper.LoadSaveState(saveState, currentSave);
+            }
+        }
     }
 }
