@@ -495,7 +495,7 @@ namespace Stoker
             {
                 CardUpgradeState cardUpgradeState = Activator.CreateInstance<CardUpgradeState>();
                 cardUpgradeState.Setup(selectedUpgradeData);
-                selectedCardState.Upgrade(cardUpgradeState, null);
+                selectedCardState.Upgrade(cardUpgradeState, currentSave);
                 selectedCardState.UpdateCardBodyText(currentSave);
                 UpdateUpgrades();
                 RefreshSelectionCardStateSelectionButtons();
